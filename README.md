@@ -18,7 +18,13 @@ The binary is at `target/release/replayfs`.
 
 ### Configuration
 
-Create a TOML config file:
+Preset configs for common frameworks are available in [`configs/`](configs/). For example, to use the Next.js preset:
+
+```
+cp configs/nextjs.toml /path/to/your/project/replayfs.toml
+```
+
+Or create your own TOML config file:
 
 ```toml
 watch_dir = "/path/to/your/project"
