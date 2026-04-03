@@ -52,6 +52,9 @@ enum Command {
         /// Replay up to this elapsed time in milliseconds
         #[arg(long)]
         until_ms: Option<u64>,
+        /// Replay events with original timing (sleeps between events)
+        #[arg(long)]
+        realtime: bool,
     },
 }
 
@@ -76,8 +79,9 @@ fn main() -> anyhow::Result<()> {
             output,
             until_seq,
             until_ms,
+            realtime,
         } => {
-            replay::replay(&data_dir, &output, until_seq, until_ms)?;
+            replay::replay(&data_dir, &output, until_seq, until_ms, realtime)?;
         }
     }
 

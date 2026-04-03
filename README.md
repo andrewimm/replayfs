@@ -78,6 +78,14 @@ replayfs replay --data-dir .replayfs --output /tmp/replay --until-seq 100
 replayfs replay --data-dir .replayfs --output /tmp/replay --until-ms 5000
 ```
 
+Replay with original timing (files appear in the output directory at the same pace they were originally changed):
+
+```
+replayfs replay --data-dir .replayfs --output /tmp/replay --realtime
+```
+
+This can be combined with `--until-seq` or `--until-ms` to replay a specific window in real time.
+
 ### Portable archives
 
 The `.replayfs` directory is fully self-contained — it holds both the event log and all file snapshots. You can zip it up, move it to another machine, and replay there:
