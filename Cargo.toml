@@ -1,0 +1,23 @@
+[package]
+name = "replayfs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+notify = "8.1"
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.140"
+toml = "0.8.9"
+sha2 = "0.10.8"
+hex = "0.4.3"
+anyhow = "1.0.100"
+thiserror = "2.0.12"
+tracing = "0.1.41"
+tracing-subscriber = "0.3.20"
+nix = { version = "0.30", features = ["signal", "fs", "process"] }
+globset = "0.4.16"
+ctrlc = "3.4"
+
+[dev-dependencies]
+tempfile = "3"
