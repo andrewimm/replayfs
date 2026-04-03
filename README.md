@@ -57,13 +57,13 @@ replayfs start --config config.toml
 ### Check status
 
 ```
-replayfs status --data-dir /path/to/your/project/.replayfs
+replayfs status
 ```
 
 ### Stop the daemon
 
 ```
-replayfs stop --data-dir /path/to/your/project/.replayfs
+replayfs stop
 ```
 
 ### Replay
@@ -71,17 +71,23 @@ replayfs stop --data-dir /path/to/your/project/.replayfs
 Reconstruct the full directory state:
 
 ```
-replayfs replay --data-dir /path/to/your/project/.replayfs --output /tmp/replay
+replayfs replay --output /tmp/replay
 ```
 
 Reconstruct state up to a specific point:
 
 ```
 # Stop after sequence number 100
-replayfs replay --data-dir .replayfs --output /tmp/replay --until-seq 100
+replayfs replay --output /tmp/replay --until-seq 100
 
 # Stop after 5000ms from recording start
-replayfs replay --data-dir .replayfs --output /tmp/replay --until-ms 5000
+replayfs replay --output /tmp/replay --until-ms 5000
+```
+
+The `stop`, `status`, and `replay` commands all default to `.replayfs` in the current directory. Use `--data-dir` to point to a different location:
+
+```
+replayfs replay --data-dir /path/to/other/.replayfs --output /tmp/replay
 ```
 
 Replay with original timing (files appear in the output directory at the same pace they were originally changed):

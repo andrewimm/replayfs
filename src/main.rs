@@ -28,20 +28,20 @@ enum Command {
     },
     /// Stop the running daemon
     Stop {
-        /// Path to data directory (contains PID file and socket)
-        #[arg(short, long)]
+        /// Path to data directory (contains PID file and socket) [default: .replayfs]
+        #[arg(short, long, default_value = ".replayfs")]
         data_dir: PathBuf,
     },
     /// Show daemon status
     Status {
-        /// Path to data directory
-        #[arg(short, long)]
+        /// Path to data directory [default: .replayfs]
+        #[arg(short, long, default_value = ".replayfs")]
         data_dir: PathBuf,
     },
     /// Replay filesystem state from log
     Replay {
-        /// Path to data directory (contains log.ndjson and blobs/)
-        #[arg(short, long)]
+        /// Path to data directory (contains log.ndjson and blobs/) [default: .replayfs]
+        #[arg(short, long, default_value = ".replayfs")]
         data_dir: PathBuf,
         /// Output directory to reconstruct into
         #[arg(short, long)]
