@@ -79,14 +79,12 @@ fn handle_event(
     let op = match event.kind {
         EventKind::Create(_) => Operation::Create,
         EventKind::Modify(notify::event::ModifyKind::Data(_)) => Operation::Modify,
-        EventKind::Modify(notify::event::ModifyKind::Name(
-            notify::event::RenameMode::Both,
-        )) => Operation::Rename,
+        EventKind::Modify(notify::event::ModifyKind::Name(_)) => Operation::Rename,
         EventKind::Remove(_) => Operation::Delete,
         _ => return,
     };
 
-    // For rename, we expect two paths (from, to)
+    // Rename with both paths (from, to)
     if op == Operation::Rename && event.paths.len() == 2 {
         let from = &event.paths[0];
         let to = &event.paths[1];
@@ -106,19 +104,62 @@ fn handle_event(
             None => return,
         };
 
+        // Snapshot the destination file (the content has landed at `to`)
+        let (content_hash, size) = match snapshot::snapshot_file(to, blob_dir, max_snapshot_size) {
+            Ok((hash, sz)) => (Some(hash), Some(sz)),
+            Err(e) => {
+                debug!("snapshot skipped for rename dest {}: {}", to.display(), e);
+                (None, None)
+            }
+        };
+
         if let Err(e) = log_writer.append(
             Operation::Rename,
             from_rel,
             Some(to_rel),
-            None,
-            None,
+            content_hash,
+            size,
         ) {
             error!("failed to write log entry: {}", e);
         }
         return;
     }
 
-    // Single-path events
+    // Rename with only one path — treat as create/modify on the destination
+    // (macOS FSEvents often delivers renames this way)
+    if op == Operation::Rename && event.paths.len() == 1 {
+        let path = &event.paths[0];
+        if should_ignore(path, watch_dir, data_dir, ignore_set) {
+            return;
+        }
+        let rel = match relative_path(path, watch_dir) {
+            Some(r) => r,
+            None => return,
+        };
+
+        // If the file exists at this path, it's the destination — snapshot it as a modify
+        if path.exists() {
+            let (content_hash, size) =
+                match snapshot::snapshot_file(path, blob_dir, max_snapshot_size) {
+                    Ok((hash, sz)) => (Some(hash), Some(sz)),
+                    Err(e) => {
+                        debug!("snapshot skipped for {}: {}", path.display(), e);
+                        (None, None)
+                    }
+                };
+            if let Err(e) = log_writer.append(Operation::Modify, rel, None, content_hash, size) {
+                error!("failed to write log entry: {}", e);
+            }
+        } else {
+            // File no longer exists at this path — it was the source of a rename (i.e., deleted)
+            if let Err(e) = log_writer.append(Operation::Delete, rel, None, None, None) {
+                error!("failed to write log entry: {}", e);
+            }
+        }
+        return;
+    }
+
+    // Single-path events (create, modify, delete)
     for path in &event.paths {
         if should_ignore(path, watch_dir, data_dir, ignore_set) {
             continue;

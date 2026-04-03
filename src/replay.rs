@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
@@ -131,7 +131,7 @@ fn materialize_entry(
         Operation::Create | Operation::Modify => {
             let out_path = output.join(&entry.path);
             if let Some(parent) = out_path.parent() {
-                fs::create_dir_all(parent)?;
+                ensure_dir(parent)?;
             }
             if let Some(fs) = state.get(&entry.path) {
                 write_blob(&out_path, &fs.content_hash, blob_dir, &entry.path)?;
@@ -139,7 +139,9 @@ fn materialize_entry(
         }
         Operation::Delete => {
             let out_path = output.join(&entry.path);
-            if out_path.exists() {
+            if out_path.is_dir() {
+                fs::remove_dir_all(&out_path).ok();
+            } else if out_path.exists() {
                 fs::remove_file(&out_path).ok();
             }
         }
@@ -148,7 +150,7 @@ fn materialize_entry(
                 let from_path = output.join(&entry.path);
                 let to_path = output.join(dest);
                 if let Some(parent) = to_path.parent() {
-                    fs::create_dir_all(parent)?;
+                    ensure_dir(parent)?;
                 }
                 if from_path.exists() {
                     fs::rename(&from_path, &to_path)?;
@@ -169,10 +171,29 @@ fn materialize_all(
     for (rel_path, file_state) in state {
         let out_path = output.join(rel_path);
         if let Some(parent) = out_path.parent() {
-            fs::create_dir_all(parent)?;
+            ensure_dir(parent)?;
         }
         write_blob(&out_path, &file_state.content_hash, blob_dir, rel_path)?;
     }
+    Ok(())
+}
+
+/// Create a directory path, removing any files that conflict with needed directories.
+fn ensure_dir(path: &Path) -> Result<()> {
+    if path.is_dir() {
+        return Ok(());
+    }
+    // Walk from the root to find any file blocking a needed directory
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        current.push(component);
+        if current.is_file() {
+            fs::remove_file(&current)
+                .with_context(|| format!("failed to remove file blocking directory: {}", current.display()))?;
+        }
+    }
+    fs::create_dir_all(path)
+        .with_context(|| format!("failed to create directory: {}", path.display()))?;
     Ok(())
 }
 
@@ -182,22 +203,31 @@ fn write_blob(
     blob_dir: &Path,
     rel_path: &str,
 ) -> Result<()> {
-    if let Some(hash) = content_hash {
-        let prefix = &hash[..2];
-        let blob_path = blob_dir.join(prefix).join(hash);
-        if blob_path.exists() {
-            fs::copy(&blob_path, out_path)
-                .with_context(|| format!("failed to copy blob to {}", out_path.display()))?;
-        } else {
-            fs::File::create(out_path)?;
-            eprintln!(
-                "warning: blob missing for {} (hash {}), created empty file",
-                rel_path, hash
-            );
-        }
-    } else {
-        fs::File::create(out_path)?;
+    let Some(hash) = content_hash else {
+        // No snapshot — nothing to write
+        return Ok(());
+    };
+
+    let prefix = &hash[..2];
+    let blob_path = blob_dir.join(prefix).join(hash);
+    if !blob_path.exists() {
+        eprintln!(
+            "warning: blob missing for {} (hash {}), skipping",
+            rel_path, hash
+        );
+        return Ok(());
     }
+
+    // Remove anything at the target path (could be a dir from a previous state)
+    if out_path.is_dir() {
+        fs::remove_dir_all(out_path)?;
+    } else if out_path.exists() {
+        fs::remove_file(out_path)?;
+    }
+
+    fs::copy(&blob_path, out_path)
+        .with_context(|| format!("failed to copy blob to {}", out_path.display()))?;
+
     Ok(())
 }
 
@@ -217,18 +247,19 @@ pub(crate) fn apply_entry(state: &mut BTreeMap<String, FileState>, entry: &LogEn
         }
         Operation::Rename => {
             if let Some(dest) = &entry.dest_path {
-                if let Some(fs) = state.remove(&entry.path) {
-                    state.insert(dest.clone(), fs);
+                // Remove source from state
+                let old = state.remove(&entry.path);
+                // If the rename event has a content_hash, use it (fresh snapshot
+                // of the destination). Otherwise fall back to the source's hash.
+                let content_hash = if entry.content_hash.is_some() {
+                    entry.content_hash.clone()
                 } else {
-                    // Source wasn't tracked (existed before recording started) —
-                    // insert dest with no content
-                    state.insert(
-                        dest.clone(),
-                        FileState {
-                            content_hash: None,
-                        },
-                    );
-                }
+                    old.and_then(|s| s.content_hash)
+                };
+                state.insert(
+                    dest.clone(),
+                    FileState { content_hash },
+                );
             }
         }
     }
