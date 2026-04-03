@@ -1,0 +1,13 @@
+watch_dir = "."
+ignore = [
+    ".next",
+    "node_modules",
+    ".git",
+    ".turbo",
+    ".vercel",
+    ".env*.local",
+    "*.swp",
+    "*.swo",
+    "*~",
+    ".DS_Store",
+]
