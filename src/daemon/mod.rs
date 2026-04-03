@@ -62,8 +62,7 @@ pub fn start(config: Config, foreground: bool) -> Result<()> {
     }
 
     if !foreground {
-        daemonize(data_dir)?;
-        return Ok(());
+        daemonize()?;
     }
 
     run_daemon(config)
@@ -153,19 +152,15 @@ fn ctrlc_handler(shutdown: Arc<AtomicBool>) {
     });
 }
 
-fn daemonize(_data_dir: &Path) -> Result<()> {
+fn daemonize() -> Result<()> {
     use nix::unistd::{fork, setsid, ForkResult};
 
     match unsafe { fork() }? {
         ForkResult::Parent { .. } => {
-            // Parent exits; child continues
             std::process::exit(0);
         }
         ForkResult::Child => {
             setsid().context("setsid failed")?;
-            // Re-read config and run — but we already have it, so we'd need to
-            // restructure. For now, this path is handled by the caller.
-            // The actual daemon run happens after fork returns to caller.
         }
     }
     Ok(())
