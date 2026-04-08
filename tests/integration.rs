@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
+use serde_json::json;
 use tempfile::tempdir;
 
 /// Helper: write a blob to the content-addressed store, return its hash.
@@ -177,4 +178,64 @@ fn replay_rejects_future_schema_version() {
     assert!(!output_cmd.status.success());
     let stderr = String::from_utf8_lossy(&output_cmd.stderr);
     assert!(stderr.contains("schema version") || stderr.contains("unsupported"));
+}
+
+#[test]
+fn replay_pkg_override_rewrites_package_json() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().join("data");
+    let blob_dir = data_dir.join("blobs");
+    let output = dir.path().join("output");
+
+    fs::create_dir_all(&blob_dir).unwrap();
+
+    let pkg_json = json!({
+        "name": "test-app",
+        "dependencies": {
+            "next": "15.0.0",
+            "react": "^18.0.0"
+        },
+        "devDependencies": {
+            "@next/bundle-analyzer": "15.0.0",
+            "typescript": "^5.0.0"
+        }
+    });
+    let pkg_bytes = serde_json::to_vec_pretty(&pkg_json).unwrap();
+    let h1 = write_blob(&blob_dir, &pkg_bytes);
+
+    write_log(
+        &data_dir.join("log.ndjson"),
+        &[
+            r#"{"type":"header","schema_version":1,"watch_dir":"/tmp/test"}"#,
+            &format!(
+                r#"{{"type":"event","seq":1,"elapsed_ms":10,"op":"create","path":"package.json","content_hash":"{}","size":{}}}"#,
+                h1,
+                pkg_bytes.len()
+            ),
+            r#"{"type":"event","seq":2,"elapsed_ms":20,"op":"install","path":"package.json"}"#,
+        ],
+    );
+
+    // Replay with --pkg-override next=canary
+    let cmd_output = std::process::Command::new(env!("CARGO_BIN_EXE_replayfs"))
+        .args([
+            "replay",
+            "-d", data_dir.to_str().unwrap(),
+            "-o", output.to_str().unwrap(),
+            "--pkg-override", "next=canary",
+        ])
+        .output()
+        .unwrap();
+
+    // Install will fail (no real project), but package.json should be rewritten
+    // Check the file was modified
+    let result_pkg: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(output.join("package.json")).unwrap()).unwrap();
+
+    assert_eq!(result_pkg["dependencies"]["next"], "canary");
+    assert_eq!(result_pkg["dependencies"]["react"], "^18.0.0"); // unchanged
+    assert_eq!(result_pkg["devDependencies"]["@next/bundle-analyzer"], "15.0.0"); // exact match only
+    assert_eq!(result_pkg["devDependencies"]["typescript"], "^5.0.0"); // unchanged
+    // Overrides section should be created with all override entries
+    assert_eq!(result_pkg["overrides"]["next"], "canary");
 }

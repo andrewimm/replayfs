@@ -38,6 +38,7 @@ pub enum Operation {
     Modify,
     Delete,
     Rename,
+    Install,
 }
 
 pub struct LogWriter {

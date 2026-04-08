@@ -116,12 +116,13 @@ fn handle_event(
         if let Err(e) = log_writer.append(
             Operation::Rename,
             from_rel,
-            Some(to_rel),
+            Some(to_rel.clone()),
             content_hash,
             size,
         ) {
             error!("failed to write log entry: {}", e);
         }
+        emit_install_if_package_json(&to_rel, log_writer);
         return;
     }
 
@@ -147,9 +148,10 @@ fn handle_event(
                         (None, None)
                     }
                 };
-            if let Err(e) = log_writer.append(Operation::Modify, rel, None, content_hash, size) {
+            if let Err(e) = log_writer.append(Operation::Modify, rel.clone(), None, content_hash, size) {
                 error!("failed to write log entry: {}", e);
             }
+            emit_install_if_package_json(&rel, log_writer);
         } else {
             // File no longer exists at this path — it was the source of a rename (i.e., deleted)
             if let Err(e) = log_writer.append(Operation::Delete, rel, None, None, None) {
@@ -182,8 +184,25 @@ fn handle_event(
             (None, None)
         };
 
-        if let Err(e) = log_writer.append(op, rel, None, content_hash, size) {
+        if let Err(e) = log_writer.append(op, rel.clone(), None, content_hash, size) {
             error!("failed to write log entry: {}", e);
+        }
+        if matches!(op, Operation::Create | Operation::Modify) {
+            emit_install_if_package_json(&rel, log_writer);
+        }
+    }
+}
+
+fn emit_install_if_package_json(rel_path: &str, log_writer: &mut LogWriter) {
+    if Path::new(rel_path).file_name().and_then(|f| f.to_str()) == Some("package.json") {
+        if let Err(e) = log_writer.append(
+            Operation::Install,
+            rel_path.to_string(),
+            None,
+            None,
+            None,
+        ) {
+            error!("failed to write install entry: {}", e);
         }
     }
 }
